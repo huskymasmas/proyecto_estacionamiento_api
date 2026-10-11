@@ -157,7 +157,7 @@ def comando(request):
 
     # 2) Traducción a la base de datos
     try:
-        resultado = backend_logic.ejecutar(instruccion, body.get("usuario_id"))
+        resultado = backend_logic.ejecutar(instruccion, body.get("usuario_id"), body.get("espacio"))
     except backend_logic.ErrorParqueo as e:
         return JsonResponse({"ok": False, "etapa": "bd", "error": e.mensaje}, status=e.status)
 

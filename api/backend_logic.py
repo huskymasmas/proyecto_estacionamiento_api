@@ -48,43 +48,100 @@ def registrar_vehiculo(cursor, tipo, placa):
     if cursor.fetchone():
         raise ErrorParqueo(f"La placa {placa} ya está registrada.", 409)
     tipo_bd = TIPO_A_VEHICULO[tipo]
+    fijo = CAJONES_FIJOS.get(placa)
+    if fijo and tipo != fijo[1]:
+        raise ErrorParqueo(f"La placa fija {placa} solo se puede registrar como {fijo[1]} (cajón {fijo[0]}).", 409)
     cursor.execute("INSERT INTO vehiculos (placa, tipo_vehiculo) VALUES (%s,%s)", [placa, tipo_bd])
     return {"resultado": {"vehiculo_id": cursor.lastrowid, "placa": placa, "tipo_vehiculo": tipo_bd},
             "traduccion_bd": [{"operacion": "INSERT", "tabla": "vehiculos", "datos": {"placa": placa, "tipo_vehiculo": tipo_bd}}]}
 
 
-def llegada(cursor, placa, usuario_id=None):
-    _, _, tipo_vehiculo = _vehiculo(cursor, placa)
-    if _registro_activo(cursor, _vehiculo(cursor, placa)[0], bloquear=True):
+# Relación fija entre lector/cajón, placa RFID y categoría.
+# Solo el cajón 3 se comparte (modo Manual).
+CAJONES_FIJOS = {
+    "P101CMP": (1, "compacto"),
+    "P102CMP": (2, "compacto"),
+    "P401CRG": (4, "carga"),
+    "P501RSV": (5, "reserva"),
+    "P601GRD": (6, "grande"),
+    "M701MOT": (7, "moto"),
+}
+
+# Identificadores físicos permitidos: no se supone que id=numero de cajón.
+# Configura codigo o ubicacion con uno de estos identificadores únicos.
+def _alias_cajon(numero):
+    n = str(numero)
+    return (n, f"0{n}", f"E{n}", f"E0{n}", f"ESP{n}",
+            f"ESP0{n}", f"ESP-{n}", f"ESP-0{n}",
+            f"CAJON{n}", f"CAJON {n}", f"CAJÓN {n}")
+
+
+def _resolver_espacio(cursor, numero):
+    """Exige exactamente un espacio físico identificable, nunca el primero de la categoría."""
+    alias = _alias_cajon(numero)
+    marcas = ",".join(["%s"] * len(alias))
+    sql = f"""SELECT e.id, e.codigo, e.ubicacion, e.estado
+        FROM espacios e JOIN catalogo_espacios c ON c.id=e.catalogo_espacio_id
+        WHERE c.activo=1 AND (
+            UPPER(TRIM(e.codigo)) IN ({marcas})
+            OR UPPER(TRIM(e.ubicacion)) IN ({marcas})
+            {"OR UPPER(TRIM(e.ubicacion))='MANUAL'" if numero == 3 else ""}
+        ) FOR UPDATE"""
+    cursor.execute(sql, list(alias) * 2)
+    rows = cursor.fetchall()
+    if not rows:
+        raise ErrorParqueo(f"No se encuentra el cajón físico {numero}. Revisa codigo y ubicacion de la tabla espacios.", 409)
+    if len(rows) != 1:
+        raise ErrorParqueo(f"La identificación del cajón {numero} no es única en la tabla espacios.", 409)
+    return rows[0]
+
+
+def llegada(cursor, placa, usuario_id=None, espacio_manual=False):
+    vehiculo_id, _, tipo_vehiculo = _vehiculo(cursor, placa)
+    if _registro_activo(cursor, vehiculo_id, bloquear=True):
         raise ErrorParqueo(f"El vehículo {placa} ya tiene una estancia activa.", 409)
-    if tipo_vehiculo not in VEHICULO_A_CATEGORIA:
-        raise ErrorParqueo(f"El tipo de vehículo {tipo_vehiculo} no tiene categoría de espacio configurada.", 409)
     if usuario_id is not None:
         cursor.execute("SELECT 1 FROM usuarios WHERE id=%s AND activo=1", [usuario_id])
         if not cursor.fetchone():
             raise ErrorParqueo(f"El usuario_id {usuario_id} no existe o está inactivo.", 400)
-    categoria = VEHICULO_A_CATEGORIA[tipo_vehiculo]
-    cursor.execute("""SELECT e.id,e.codigo,e.ubicacion FROM espacios e
-        JOIN catalogo_espacios c ON c.id=e.catalogo_espacio_id
-        WHERE c.codigo_categoria=%s AND c.activo=1 AND e.estado='LIBRE'
-        ORDER BY e.id LIMIT 1 FOR UPDATE""", [categoria])
-    espacio = cursor.fetchone()
-    if not espacio:
-        raise ErrorParqueo(f"No hay espacios libres para la categoría {categoria}.", 409)
-    espacio_id, codigo, ubicacion = espacio
-    vehiculo_id = _vehiculo(cursor, placa)[0]
+
+    if espacio_manual:
+        # El manual solo es para vehículos dinámicos; las placas de lectores fijos
+        # quedan exclusivamente asociadas a su cajón físico.
+        if placa in CAJONES_FIJOS:
+            raise ErrorParqueo(f"La placa {placa} pertenece al cajón fijo {CAJONES_FIJOS[placa][0]}; no puede usar Manual.", 409)
+        numero = 3
+    else:
+        configuracion = CAJONES_FIJOS.get(placa)
+        if configuracion is None:
+            raise ErrorParqueo(f"La placa {placa} no tiene cajón fijo asignado. Para un vehículo dinámico usa espacio=Manual (cajón 3).", 409)
+        numero, tipo_esperado = configuracion
+        tipo_bd_esperado = TIPO_A_VEHICULO[tipo_esperado]
+        if tipo_vehiculo != tipo_bd_esperado:
+            raise ErrorParqueo(f"La placa {placa} debe estar registrada como {tipo_esperado} ({tipo_bd_esperado}).", 409)
+
+    espacio_id, codigo, ubicacion, estado = _resolver_espacio(cursor, numero)
+    if estado != 'LIBRE':
+        raise ErrorParqueo(f"El cajón {numero} está ocupado o no disponible.", 409)
+    # Doble comprobación de ocupación, incluso si la columna estado quedó desactualizada.
+    cursor.execute("SELECT id FROM registros_acceso WHERE espacio_id=%s AND estado='ACTIVO' LIMIT 1", [espacio_id])
+    if cursor.fetchone():
+        raise ErrorParqueo(f"El cajón {numero} ya tiene un registro de acceso activo.", 409)
+
+    cursor.execute("UPDATE espacios SET estado='OCUPADO' WHERE id=%s AND estado='LIBRE'", [espacio_id])
+    if cursor.rowcount != 1:
+        raise ErrorParqueo(f"El cajón {numero} dejó de estar disponible.", 409)
     cursor.execute("INSERT INTO registros_acceso (vehiculo_id,espacio_id,usuario_id,estado,monto_total) VALUES (%s,%s,%s,'ACTIVO',0.00)",
                    [vehiculo_id, espacio_id, usuario_id])
     registro_id = cursor.lastrowid
-    cursor.execute("UPDATE espacios SET estado='OCUPADO' WHERE id=%s", [espacio_id])
     cursor.execute("SELECT fecha_entrada FROM registros_acceso WHERE id=%s", [registro_id])
     fecha = cursor.fetchone()[0]
-    return {"resultado": {"registro_id": registro_id, "placa": placa, "espacio": codigo,
-            "ubicacion": ubicacion, "categoria": categoria,
+    return {"resultado": {"registro_id": registro_id, "placa": placa, "cajon": numero,
+            "espacio": codigo, "ubicacion": ubicacion, "categoria": "MANUAL" if espacio_manual else CAJONES_FIJOS[placa][1],
             "fecha_entrada": fecha.isoformat() if hasattr(fecha, 'isoformat') else str(fecha), "estado": "ACTIVO"},
             "traduccion_bd": [
-                {"operacion": "INSERT", "tabla": "registros_acceso", "datos": {"vehiculo_id": vehiculo_id, "espacio_id": espacio_id, "usuario_id": usuario_id, "estado": "ACTIVO", "monto_total": 0}},
-                {"operacion": "UPDATE", "tabla": "espacios", "datos": {"id": espacio_id, "estado": "OCUPADO"}}]}
+                {"operacion": "UPDATE", "tabla": "espacios", "datos": {"id": espacio_id, "estado": "OCUPADO"}},
+                {"operacion": "INSERT", "tabla": "registros_acceso", "datos": {"vehiculo_id": vehiculo_id, "espacio_id": espacio_id, "usuario_id": usuario_id, "estado": "ACTIVO", "monto_total": 0}}]}
 
 
 def autorizar_salida(cursor, placa):
@@ -162,15 +219,24 @@ def consultar(cursor):
             "traduccion_bd": [{"operacion": "SELECT", "tabla": "registros_acceso", "filtro": "estado=ACTIVO"}]}
 
 
-def ejecutar(instruccion, usuario_id=None):
+def ejecutar(instruccion, usuario_id=None, espacio=None):
     """Ejecuta exclusivamente instrucciones que el autómata ya reconoció."""
     accion = instruccion["accion"]
+    # "espacio" es una preferencia del backend, NO un token del autómata.
+    # Aceptamos solo la selección explícita del cajón 3 Manual.
+    manual = False
+    if espacio is not None:
+        if not isinstance(espacio, str) or espacio.strip().casefold() != "manual":
+            raise ErrorParqueo('El campo "espacio" solo admite "Manual".', 400)
+        if accion not in ("ASIGNAR", "LLEGADA"):
+            raise ErrorParqueo('El campo "espacio" solo se utiliza con ASIGNAR o LLEGADA.', 400)
+        manual = True
     with transaction.atomic():
         with connection.cursor() as cursor:
             if accion == "REGISTRAR":
                 return registrar_vehiculo(cursor, instruccion["tipo"], instruccion["placa"])
             if accion in ("ASIGNAR", "LLEGADA"):
-                return llegada(cursor, instruccion["placa"], usuario_id)
+                return llegada(cursor, instruccion["placa"], usuario_id, espacio_manual=manual)
             if accion == "AUTORIZAR_SALIDA":
                 return autorizar_salida(cursor, instruccion["placa"])
             if accion == "SALIDA":

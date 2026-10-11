@@ -42,9 +42,9 @@ def t_TIPO(t):
     return t
 
 
-# Placas: AAA999
+# Formatos heredado ABC123 y placas RFID P101CMP, P401CRG, M701MOT, etc.
 def t_PLACA(t):
-    r'[A-Z]{3}[0-9]{3}'
+    r'(?:[A-Z]{3}[0-9]{3}|[A-Z][0-9]{3}[A-Z]{3})'
     return t
 
 
