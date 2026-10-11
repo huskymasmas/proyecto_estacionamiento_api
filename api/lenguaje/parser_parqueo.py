@@ -33,6 +33,11 @@ def p_registrar(p):
     'registrar : REGISTRAR LPAREN TIPO COMMA PLACA RPAREN'
     p[0] = {"accion": "REGISTRAR", "tipo": p[3], "placa": p[5]}
 
+# Compatible con REGISTRAR(789XY, manual) sin quitar el orden anterior.
+def p_registrar_placa_primero(p):
+    'registrar : REGISTRAR LPAREN PLACA COMMA TIPO RPAREN'
+    p[0] = {"accion": "REGISTRAR", "tipo": p[5], "placa": p[3]}
+
 
 def p_asignar(p):
     'asignar : ASIGNAR LPAREN PLACA RPAREN'

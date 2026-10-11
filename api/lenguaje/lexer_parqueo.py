@@ -38,13 +38,13 @@ t_CONSULTAR = r'CONSULTAR'
 
 # Tipos de vehículo
 def t_TIPO(t):
-    r'(compacto|grande|moto|reserva|carga)'
+    r'(compacto|grande|moto|reserva|carga|manual)'
     return t
 
 
 # Formatos heredado ABC123 y placas RFID P101CMP, P401CRG, M701MOT, etc.
 def t_PLACA(t):
-    r'(?:[A-Z]{3}[0-9]{3}|[A-Z][0-9]{3}[A-Z]{3})'
+    r'(?:[A-Z]{3}[0-9]{3}|[A-Z][0-9]{3}[A-Z]{3}|[0-9]{3}[A-Z]{2})'
     return t
 
 
