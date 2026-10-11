@@ -162,5 +162,5 @@ def comando(request):
         return JsonResponse({"ok": False, "etapa": "bd", "error": e.mensaje}, status=e.status)
 
     return JsonResponse(
-        {"ok": True, "comando": texto, "instruccion": instruccion, **resultado}, status=201
+        {"ok": True, "comando": texto, "instruccion": instruccion, **resultado}, status=200
     )
