@@ -97,19 +97,8 @@ def rfid(request):
     return error(ErrorParqueo('Usa /api/rfid/comando con ASIGNAR(...) o SALIDA(...).',400))
 
 
-def _key(request,header,var):
-    expected=os.getenv(var,'')
-    if not expected or not secrets.compare_digest(request.headers.get(header,''),expected):
-        raise ErrorParqueo('Acceso no autorizado.',401)
 
 
-@require_POST
-def manual_pendiente(request):
-    try:
-        _key(request,'X-Web-Key','WEB_API_KEY'); d=leer(request)
-        if set(d)!={'placa'}: raise ErrorParqueo('Envía únicamente placa.',400)
-        return JsonResponse(crear_solicitud_manual(d['placa']))
-    except ErrorParqueo as e:return error(e)
 
 
 @require_POST
