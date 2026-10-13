@@ -17,5 +17,5 @@ urlpatterns += [
 # Nueva interfaz ESP32: comandos literales, SIN lexer/parser del autómata.
 urlpatterns += [
     path('rfid/comando', views.rfid_comando, name='rfid-comando'),
-    path('manual/pendiente', views.manual_pendiente, name='manual-pendiente'),
+  # path('manual/pendiente', views.manual_pendiente, name='manual-pendiente'),
 ]
