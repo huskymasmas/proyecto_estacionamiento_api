@@ -14,7 +14,7 @@ FIJOS = {
 }
 CATEGORIAS = {1:'compacto',2:'compacto',3:'manual',4:'carga',5:'reserva',6:'grande',7:'moto'}
 COMANDO = re.compile(
-    r'^(ASIGNAR|SALIDA)\([A-Z][0-9]{3}[A-Z]{3}\)$'
+    r'^(ASIGNAR|SALIDA)\((P101CMP|P102CMP|P401CRG|P501RSV|P601GRD|M701MOT|MANUAL)\)$'
 )
 PLACA_WEB = re.compile(r'^[A-Z0-9]{6,20}$')
 

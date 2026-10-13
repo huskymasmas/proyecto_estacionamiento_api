@@ -44,9 +44,8 @@ def t_TIPO(t):
 
 # Formatos heredado ABC123 y placas RFID P101CMP, P401CRG, M701MOT, etc.
 def t_PLACA(t):
-    r'(?:[A-Z]{3}[0-9]{3}|[A-Z][0-9]{3}[A-Z]{3}|[0-9]{3}[A-Z]{2})'
+    r'(?:MANUAL|[A-Z]{3}[0-9]{3}|[A-Z][0-9]{3}[A-Z]{3}|[0-9]{3}[A-Z]{2})'
     return t
-
 
 # Ignorar espacios, tabs y saltos de línea
 t_ignore = ' \t\n'
