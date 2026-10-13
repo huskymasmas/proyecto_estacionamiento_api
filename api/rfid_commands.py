@@ -16,7 +16,6 @@ CATEGORIAS = {1:'compacto',2:'compacto',3:'manual',4:'carga',5:'reserva',6:'gran
 COMANDO = re.compile(
     r'^(ASIGNAR|SALIDA)\((P101CMP|P102CMP|P401CRG|P501RSV|P601GRD|M701MOT|MANUAL)\)$'
 )
-PLACA_WEB = re.compile(r'^[A-Z0-9]{6,20}$')
 
 
 def fallo(texto, status=409):
@@ -160,8 +159,6 @@ def crear_solicitud_manual(placa):
     """
     if not isinstance(placa,str): fallo('Placa inválida.',400)
     placa=placa.strip().upper()
-    if not PLACA_WEB.fullmatch(placa) or placa in FIJOS or placa=='MANUAL':
-        fallo('Placa dinámica inválida o reservada.',400)
     with transaction.atomic():
         with connection.cursor() as c:
             c.execute('SELECT id FROM vehiculosnuevos WHERE placa=%s FOR UPDATE',[placa])
@@ -181,7 +178,6 @@ def confirmar_pago(placa):
     """Solo invocar DESPUÉS de que la Web haya confirmado el pago real."""
     if not isinstance(placa,str): fallo('Placa inválida.',400)
     placa=placa.strip().upper()
-    if not PLACA_WEB.fullmatch(placa): fallo('Placa inválida.',400)
     with transaction.atomic():
         with connection.cursor() as c:
             c.execute("""SELECT r.id,r.fecha_entrada FROM registros_accesonuevos r
